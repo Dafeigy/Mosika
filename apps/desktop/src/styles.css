@@ -1,0 +1,31 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 213 47% 97%;
+    --foreground: 218 39% 14%;
+    --card: 0 0% 100%;
+    --card-foreground: 218 39% 14%;
+    --primary: 212 70% 41%;
+    --primary-foreground: 0 0% 100%;
+    --destructive: 1 79% 51%;
+    --destructive-foreground: 0 0% 100%;
+    --muted: 211 41% 94%;
+    --muted-foreground: 215 16% 47%;
+    --border: 214 33% 90%;
+    --input: 214 33% 88%;
+    --ring: 212 70% 41%;
+    --radius: 0.5rem;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: "Microsoft YaHei UI", "Microsoft YaHei", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+}
