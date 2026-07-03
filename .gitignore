@@ -7,12 +7,14 @@ node_modules/
 dist/
 dist-ssr/
 *.local
+release/
 
 # Tauri / Rust build output
 target/
 apps/desktop/src-tauri/target/
 Cargo.lock
 !apps/desktop/src-tauri/Cargo.lock
+server/build/
 
 # Python virtual environments and caches
 .venv/

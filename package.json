@@ -10,7 +10,9 @@
     "dev:server": "python -m uvicorn server.app.main:app --host 127.0.0.1 --port 8765 --reload",
     "dev:desktop": "npm run tauri:dev --workspace apps/desktop",
     "dev:web": "npm run dev --workspace apps/desktop",
+    "build:server": "node scripts/build-server.mjs",
     "build:desktop": "npm run tauri:build --workspace apps/desktop",
+    "build:portable": "node scripts/build-portable.mjs",
     "verify:server": "python -m pytest server/tests",
     "verify:web": "npm run build --workspace apps/desktop"
   }

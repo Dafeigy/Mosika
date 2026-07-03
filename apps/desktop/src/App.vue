@@ -28,7 +28,7 @@ async function checkServer() {
   error.value = "";
 
   try {
-    const result = await fetchHealth();
+    const result = await fetchHealth({ attempts: 20, intervalMs: 500 });
     apiBaseUrl.value = result.apiBaseUrl;
     health.value = result.health;
   } catch (err) {
