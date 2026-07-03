@@ -13,6 +13,7 @@ const result = spawnSync(
     "PyInstaller",
     "--clean",
     "--noconfirm",
+    "--noconsole",
     "--onefile",
     "--name",
     "mousika-server",

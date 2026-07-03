@@ -41,13 +41,13 @@ python -m pip install pyinstaller
 Install frontend dependencies:
 
 ```powershell
-npm.cmd install
+npm install
 ```
 
 Start the full desktop development flow:
 
 ```powershell
-npm.cmd run dev
+npm run dev
 ```
 
 This starts both:
@@ -66,31 +66,31 @@ GET http://127.0.0.1:8765/health
 Run only the local API server:
 
 ```powershell
-npm.cmd run dev:server
+npm run dev:server
 ```
 
 Run only the Vue web client:
 
 ```powershell
-npm.cmd run dev:web
+npm run dev:web
 ```
 
 Run only the Tauri desktop client:
 
 ```powershell
-npm.cmd run dev:desktop
+npm run dev:desktop
 ```
 
 Validate the server:
 
 ```powershell
-npm.cmd run verify:server
+npm run verify:server
 ```
 
 Validate the frontend build:
 
 ```powershell
-npm.cmd run verify:web
+npm run verify:web
 ```
 
 ## Portable Build
@@ -98,7 +98,7 @@ npm.cmd run verify:web
 Build a Windows portable folder:
 
 ```powershell
-npm.cmd run build:portable
+npm run build:portable
 ```
 
 The output is written to:
@@ -168,7 +168,7 @@ See `PROGRESS.md` for the current roadmap and technical debt list.
 
 ## Troubleshooting
 
-If `npm.cmd run dev` fails with a port conflict, check whether another process is using:
+If `npm run dev` fails with a port conflict, check whether another process is using:
 
 ```text
 127.0.0.1:8765

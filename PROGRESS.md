@@ -22,13 +22,14 @@
 - Allowed `apps/desktop/src-tauri/Cargo.lock` to be tracked.
 - Added frontend health-check retries so packaged server cold starts do not fail immediately.
 - Added packaged Tauri origins to FastAPI CORS settings.
+- Packaged server now runs without a console window and writes logs to `logs/server.log`.
+- Packaged Tauri app now uses the Windows GUI subsystem in release builds to avoid a console window.
 
 ## Known Issues
 
 - FastAPI shutdown is currently forceful. Tauri calls `child.kill()` and then `child.wait()` during window close.
 - The server port is fixed at `127.0.0.1:8765`, so a port conflict can prevent the packaged server from starting.
 - The client has health-check retries, but it does not yet expose richer diagnostics if the server fails to start.
-- Packaged server logs are discarded in release mode because stdout and stderr are currently redirected to null.
 - The portable folder is not signed, zipped, checksummed, or versioned yet.
 - No installer, updater, or migration strategy exists yet.
 
@@ -48,9 +49,9 @@
    - After spawning the server, poll `/health` until it responds or times out.
    - Show a useful client-side error if startup fails.
 
-4. Persist packaged server logs.
-   - Write server stdout and stderr to `logs/server.log`.
+4. Improve packaged server logs.
    - Add log rotation later if needed.
+   - Consider exposing a "show logs" action in the desktop UI.
 
 5. Improve portable release output.
    - Add a versioned folder or zip name such as `Mousika-0.1.0-windows-x64`.
