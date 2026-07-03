@@ -6,6 +6,7 @@
     "apps/desktop"
   ],
   "scripts": {
+    "dev": "node scripts/dev.mjs",
     "dev:server": "python -m uvicorn server.app.main:app --host 127.0.0.1 --port 8765 --reload",
     "dev:desktop": "npm run tauri:dev --workspace apps/desktop",
     "dev:web": "npm run dev --workspace apps/desktop",

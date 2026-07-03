@@ -35,4 +35,20 @@ Run the Tauri desktop client:
 npm.cmd run dev:desktop
 ```
 
+Or start the MVP desktop flow with one command:
+
+```powershell
+npm.cmd run dev
+```
+
 The first validation flow calls `GET http://127.0.0.1:8765/health` from the frontend.
+
+## Project layout
+
+- `server/app`: FastAPI application code.
+- `server/tests`: server-side tests.
+- `apps/desktop/src`: Vue client code.
+- `apps/desktop/src-tauri`: Tauri 2 desktop shell.
+- `design-reference`: static design reference artifacts.
+
+During development, the FastAPI server runs as a separate local process. The Tauri shell exposes the server URL to the Vue client through `get_server_url`; production bundling and server process management are intentionally left as the next integration step.

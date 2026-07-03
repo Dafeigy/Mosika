@@ -1,16 +1,11 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import { Activity, Database, FileText, MonitorCheck, RefreshCw, ShieldCheck } from "lucide-vue-next";
+import { fetchHealth, type HealthResponse } from "@/api/health";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
-type HealthResponse = {
-  status: string;
-  service: string;
-  time: string;
-};
-
-const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8765";
+const apiBaseUrl = ref("http://127.0.0.1:8765");
 const health = ref<HealthResponse | null>(null);
 const error = ref("");
 const loading = ref(false);
@@ -33,11 +28,9 @@ async function checkServer() {
   error.value = "";
 
   try {
-    const response = await fetch(`${apiBaseUrl}/health`);
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
-    }
-    health.value = await response.json();
+    const result = await fetchHealth();
+    apiBaseUrl.value = result.apiBaseUrl;
+    health.value = result.health;
   } catch (err) {
     health.value = null;
     error.value = err instanceof Error ? err.message : "无法连接本地服务";

@@ -1,28 +1,18 @@
-from datetime import datetime, timezone
-
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from server.app.api.health import router as health_router
+from server.app.core.config import settings
 
-app = FastAPI(title="Mousika Local Server", version="0.1.0")
+
+app = FastAPI(title=settings.app_title, version=settings.app_version)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:1420",
-        "http://127.0.0.1:1420",
-        "tauri://localhost",
-    ],
+    allow_origins=settings.allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-
-@app.get("/health")
-def health() -> dict[str, str]:
-    return {
-        "status": "ok",
-        "service": "mousika-local-server",
-        "time": datetime.now(timezone.utc).isoformat(),
-    }
+app.include_router(health_router)
