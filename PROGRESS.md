@@ -28,6 +28,7 @@
 ## Known Issues
 
 - FastAPI shutdown is currently forceful. Tauri calls `child.kill()` and then `child.wait()` during window close.
+- The packaged `mousika-server.exe` can occasionally remain alive after closing the portable app, which keeps `127.0.0.1:8765` occupied.
 - The server port is fixed at `127.0.0.1:8765`, so a port conflict can prevent the packaged server from starting.
 - The client has health-check retries, but it does not yet expose richer diagnostics if the server fails to start.
 - The portable folder is not signed, zipped, checksummed, or versioned yet.
@@ -39,6 +40,7 @@
    - Add an internal shutdown endpoint or another local-only shutdown mechanism.
    - Let Tauri request graceful shutdown first.
    - Fall back to `kill()` only after a timeout.
+   - Make shutdown cleanup app-level, not only window-event-level, so packaged server processes cannot remain orphaned.
 
 2. Move from fixed port to dynamic port.
    - Let Tauri choose an available localhost port.

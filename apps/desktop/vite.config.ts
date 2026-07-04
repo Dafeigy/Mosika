@@ -2,11 +2,15 @@ import vue from "@vitejs/plugin-vue";
 import path from "node:path";
 import { defineConfig } from "vite";
 
+const root = __dirname;
+
 export default defineConfig({
+  root,
+  cacheDir: path.resolve(root, "../../node_modules/.vite/apps-desktop"),
   plugins: [vue()],
   resolve: {
     alias: {
-      "@": path.resolve(__dirname, "./src"),
+      "@": path.resolve(root, "./src"),
     },
   },
   clearScreen: false,

@@ -51,6 +51,7 @@ fn spawn_packaged_server() -> std::io::Result<Option<Child>> {
 
 fn main() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .manage(ServerProcess(Mutex::new(None)))
         .setup(|app| {
             if let Some(child) = spawn_packaged_server()? {

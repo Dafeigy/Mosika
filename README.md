@@ -175,6 +175,14 @@ If `npm run dev` fails with a port conflict, check whether another process is us
 127.0.0.1:1420
 ```
 
+Common causes:
+
+- A previous `npm run dev` process is still running.
+- The portable `Mousika.exe` is still open.
+- A packaged `mousika-server.exe` process is still running in the background.
+
+On Windows, you can check these processes in Task Manager. Stop old `Mousika.exe`, `mousika-server.exe`, `python`, or `node` processes that belong to this workspace before starting a fresh dev session.
+
 If Tauri build fails while decoding the icon, regenerate or replace:
 
 ```text

@@ -14,10 +14,28 @@
     --destructive-foreground: 0 0% 100%;
     --muted: 211 41% 94%;
     --muted-foreground: 215 16% 47%;
+    --accent-ui: 211 84% 94%;
+    --accent-ui-foreground: 212 70% 41%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 218 39% 14%;
     --border: 214 33% 90%;
     --input: 214 33% 88%;
     --ring: 212 70% 41%;
     --radius: 0.5rem;
+    --surface-soft: #eef4fb;
+    --surface-blue: #e8f1fb;
+    --fg-2: #334155;
+    --meta: #8792a2;
+    --border-soft: #d8e1ee;
+    --accent: #1f65b3;
+    --accent-hover: #185799;
+    --danger: #e42320;
+    --danger-soft: #fde9e8;
+    --success: #18844b;
+    --success-soft: #e8f6ee;
+    --warn: #b7791f;
+    --warn-soft: #fff5df;
+    --font-mono: "Cascadia Mono", "JetBrains Mono", Consolas, ui-monospace, monospace;
   }
 
   * {
