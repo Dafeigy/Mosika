@@ -55,13 +55,38 @@ type ActiveView = "home" | "workbench" | "documents" | "knowledge" | "history" |
 
 type PlanStepState = "done" | "current" | "pending";
 type RiskLevel = "high" | "mid" | "low";
+type MessageContent = {
+  type: "text" | "html";
+  text: string;
+};
+
+type ConversationItem =
+  | {
+      type: "message";
+      id: string;
+      role: "user" | "assistant" | "system";
+      content: MessageContent[];
+      createdAt: string;
+      status?: "streaming" | "done" | "error";
+    }
+  | {
+      type: "tool_call";
+      id: string;
+      toolName: string;
+      title?: string;
+      status: "pending" | "running" | "approval_required" | "done" | "error";
+      args?: unknown;
+      result?: unknown;
+      renderHint?: string;
+      createdAt: string;
+      updatedAt: string;
+    };
 
 type ProjectMock = {
   id: string;
   name: string;
   meta: string;
   folderPath: string;
-  active?: boolean;
 };
 
 type ConversationMock = {
@@ -85,6 +110,7 @@ type ConversationMock = {
     body: string;
   };
   contextChips: string[];
+  items: ConversationItem[];
 };
 
 const apiBaseUrl = ref("http://127.0.0.1:8765");
@@ -107,14 +133,12 @@ const navItems = [
 ] as const;
 
 const homeProjects = reactive<ProjectMock[]>([
-  { id: "huadong-digital", name: "华东院数字化项目", meta: "6 个任务 / 3 个知识库", active: true, folderPath: "E:\\Prog\\Mosika\\mock-projects\\huadong-digital-project" },
-  { id: "substation-office", name: "变电一所资料工作区", meta: "12 份文档 / 4 份图纸 / 内网资料", active: false, folderPath: "E:\\Prog\\Mosika\\mock-projects\\substation-office-workspace" },
-  { id: "demo-review", name: "示例工程审查项目", meta: "演示数据 / 可研报告 / 参数表", active: false, folderPath: "E:\\Prog\\Mosika\\mock-projects\\demo-engineering-review" },
+  { id: "huadong-digital", name: "华东院数字化项目", meta: "6 个任务 / 3 个知识库", folderPath: "E:\\Prog\\Mosika\\mock-projects\\huadong-digital-project" },
+  { id: "substation-office", name: "变电一所资料工作区", meta: "12 份文档 / 4 份图纸 / 内网资料", folderPath: "E:\\Prog\\Mosika\\mock-projects\\substation-office-workspace" },
+  { id: "demo-review", name: "示例工程审查项目", meta: "演示数据 / 可研报告 / 参数表", folderPath: "E:\\Prog\\Mosika\\mock-projects\\demo-engineering-review" },
 ]);
-const selectedHomeProjectId = ref<string | null>(homeProjects.find((project) => project.active)?.id ?? null);
-const expandedProjectIds = ref<string[]>(
-  selectedHomeProjectId.value ? [selectedHomeProjectId.value] : [],
-);
+const selectedHomeProjectId = ref<string | null>(null);
+const expandedProjectIds = ref<string[]>(homeProjects.map((project) => project.id));
 const renameProjectDialogOpen = ref(false);
 const renamingProjectId = ref<string | null>(null);
 const renameProjectName = ref("");
@@ -125,20 +149,20 @@ function projectRegistryPayload() {
     name: project.name,
     meta: project.meta,
     folderPath: project.folderPath,
-    active: project.active,
   }));
 }
 
 function replaceProjects(projects: ProjectMock[]) {
   homeProjects.splice(0, homeProjects.length, ...projects);
-  selectedHomeProjectId.value =
-    homeProjects.find((project) => project.active)?.id ?? selectedHomeProjectId.value;
   if (selectedHomeProjectId.value && !homeProjects.some((project) => project.id === selectedHomeProjectId.value)) {
-    selectedHomeProjectId.value = homeProjects[0]?.id ?? null;
+    selectedHomeProjectId.value = null;
   }
   expandedProjectIds.value = expandedProjectIds.value.filter((projectId) =>
     homeProjects.some((project) => project.id === projectId),
   );
+  if (expandedProjectIds.value.length === 0) {
+    expandedProjectIds.value = homeProjects.map((project) => project.id);
+  }
 }
 
 async function loadProjectRegistry() {
@@ -158,6 +182,58 @@ async function saveProjectRegistry() {
   } catch (err) {
     console.error("Failed to save project registry", err);
   }
+}
+
+function conversationItems(conversation: Omit<ConversationMock, "items">): ConversationItem[] {
+  const toolStatus = conversation.state === "running"
+    ? "running"
+    : conversation.state === "approval"
+      ? "approval_required"
+      : conversation.state === "failed"
+        ? "error"
+        : "done";
+
+  return [
+    {
+      type: "message",
+      id: `${conversation.id}-user`,
+      role: "user",
+      content: [{ type: "html", text: conversation.prompt }],
+      createdAt: conversation.updatedAt,
+      status: "done",
+    },
+    {
+      type: "tool_call",
+      id: `${conversation.id}-tool`,
+      toolName: conversation.toolName,
+      title: conversation.toolArgs,
+      status: toolStatus,
+      args: { contextChips: conversation.contextChips },
+      result: {
+        plan: conversation.plan,
+        reviewRows: conversation.reviewRows,
+        approval: conversation.approval,
+      },
+      renderHint: "workbench_review",
+      createdAt: conversation.updatedAt,
+      updatedAt: conversation.updatedAt,
+    },
+    {
+      type: "message",
+      id: `${conversation.id}-assistant`,
+      role: "assistant",
+      content: [{ type: "html", text: conversation.agentMessage }],
+      createdAt: conversation.updatedAt,
+      status: "done",
+    },
+  ];
+}
+
+function withConversationItems(conversation: Omit<ConversationMock, "items">): ConversationMock {
+  return {
+    ...conversation,
+    items: conversationItems(conversation),
+  };
 }
 
 const homeSuggestions = [
@@ -183,7 +259,7 @@ const reportReviewRows = [
   { level: "low", label: "建议", text: "图 4-3 在正文中首次引用早于图号定义，建议调整引用顺序。", ref: "P18" },
 ].map((row) => ({ ...row, level: row.level as RiskLevel }));
 
-const conversations: ConversationMock[] = [
+const conversations = reactive<ConversationMock[]>([
   {
     id: "review-220kv-report",
     projectId: "huadong-digital",
@@ -465,9 +541,58 @@ const conversations: ConversationMock[] = [
     ],
     contextChips: ["技能安装", "中文配图", "无项目对话"],
   },
-];
+].map(withConversationItems));
 
-const activeConversationId = ref(conversations[0].id);
+const activeConversationId = ref<string | null>(null);
+
+function conversationStorePayload() {
+  return conversations.map((conversation) => ({
+    id: conversation.id,
+    projectId: conversation.projectId,
+    title: conversation.title,
+    updatedAt: conversation.updatedAt,
+    taskId: conversation.taskId,
+    state: conversation.state,
+    statusLabel: conversation.statusLabel,
+    user: conversation.user,
+    prompt: conversation.prompt,
+    metrics: conversation.metrics,
+    plan: conversation.plan,
+    agentMessage: conversation.agentMessage,
+    toolName: conversation.toolName,
+    toolArgs: conversation.toolArgs,
+    reviewRows: conversation.reviewRows,
+    approval: conversation.approval,
+    contextChips: conversation.contextChips,
+    items: conversation.items,
+  }));
+}
+
+function replaceConversations(nextConversations: ConversationMock[]) {
+  conversations.splice(0, conversations.length, ...nextConversations);
+  if (!conversations.some((conversation) => conversation.id === activeConversationId.value)) {
+    activeConversationId.value = null;
+  }
+}
+
+async function loadConversationStore() {
+  try {
+    const storedConversations = await invoke<ConversationMock[]>("load_conversation_store", {
+      defaultConversations: conversationStorePayload(),
+    });
+    replaceConversations(storedConversations);
+  } catch (err) {
+    console.warn("Using mock conversations because conversation store could not be loaded", err);
+  }
+}
+
+async function saveConversationStore() {
+  try {
+    await invoke("save_conversation_store", { conversations: conversationStorePayload() });
+  } catch (err) {
+    console.error("Failed to save conversation store", err);
+  }
+}
 
 const serverStatusText = computed(() => {
   if (loading.value) return "连接中";
@@ -504,20 +629,28 @@ const activeNavItem = computed(() => {
 const composerModeLabel = computed(() => (composerMode.value === "agent" ? "任务模式" : "问答模式"));
 
 const activeConversation = computed(() => {
-  return conversations.find((conversation) => conversation.id === activeConversationId.value) ?? conversations[0];
+  if (!activeConversationId.value) return null;
+  return conversations.find((conversation) => conversation.id === activeConversationId.value) ?? null;
 });
 
+const currentConversation = computed(() => activeConversation.value ?? conversations[0]);
+
+function conversationStateLabel(state: SessionState) {
+  if (state === "running") return "执行中";
+  if (state === "approval") return "待审批";
+  if (state === "done") return "已完成";
+  if (state === "failed") return "已中止";
+  return "未开始";
+}
+
 const activeProject = computed(() => {
-  if (!activeConversation.value.projectId) return null;
-  return homeProjects.find((project) => project.id === activeConversation.value.projectId) ?? null;
+  const projectId = activeConversation.value?.projectId ?? selectedHomeProjectId.value;
+  if (!projectId) return null;
+  return homeProjects.find((project) => project.id === projectId) ?? null;
 });
 
 const activeConversationStateLabel = computed(() => {
-  if (activeConversation.value.state === "running") return "执行中";
-  if (activeConversation.value.state === "approval") return "待审批";
-  if (activeConversation.value.state === "done") return "已完成";
-  if (activeConversation.value.state === "failed") return "已中止";
-  return "未开始";
+  return conversationStateLabel(currentConversation.value.state);
 });
 
 const projectConversations = computed(() => {
@@ -614,7 +747,16 @@ async function renameProject() {
   await saveProjectRegistry();
 }
 
+function startNewConversation() {
+  activeConversationId.value = null;
+  selectedHomeProjectId.value = null;
+  prompt.value = "";
+  activeView.value = "home";
+  growComposer();
+}
+
 function startProjectConversation(projectId: string) {
+  activeConversationId.value = null;
   selectedHomeProjectId.value = projectId;
   if (!expandedProjectIds.value.includes(projectId)) {
     expandedProjectIds.value = [...expandedProjectIds.value, projectId];
@@ -638,6 +780,7 @@ function openConversation(conversationId: string) {
 
 onMounted(async () => {
   await loadProjectRegistry();
+  await loadConversationStore();
   checkServer();
   growComposer();
 });
@@ -647,17 +790,17 @@ onMounted(async () => {
   <div :class="['workbench', activeView === 'workbench' ? 'with-inspector' : '']">
     <aside class="sessions app-sidebar" aria-label="项目与对话列表">
       <div class="sidebar-brand">
-        <button class="brand-mark" type="button" aria-label="Mousika 主页" title="Mousika 主页" @click="activeView = 'home'">
+        <button class="brand-mark" type="button" aria-label="Mousika 主页" title="Mousika 主页" @click="startNewConversation">
           M
         </button>
-        <button class="brand-home" type="button" @click="activeView = 'home'">
+        <button class="brand-home" type="button" @click="startNewConversation">
           <span>Mousika</span>
           <small>桌面 AI 工作台</small>
         </button>
       </div>
 
       <div class="primary-actions" aria-label="常用操作">
-        <button type="button" @click="activeView = 'home'">
+        <button type="button" @click="startNewConversation">
           <SquarePen class="tiny-icon" />
           <span>新任务</span>
         </button>
@@ -791,7 +934,7 @@ onMounted(async () => {
 
     <header class="titlebar">
       <nav class="crumb" aria-label="当前位置">
-        <button type="button" @click="activeView = 'home'">Mousika</button>
+        <button type="button" @click="startNewConversation">Mousika</button>
         <template v-if="activeView !== 'home'">
           <ChevronRight class="crumb-icon" />
           <button v-if="activeProject" type="button" @click="activeView = 'workbench'">{{ activeProject.name }}</button>
@@ -865,9 +1008,9 @@ onMounted(async () => {
 
     <main v-else-if="activeView === 'workbench'" class="main">
       <div class="main-head">
-        <span class="task-id">{{ activeConversation.taskId }}</span>
-        <h1>{{ activeConversation.title }}</h1>
-        <span :class="['stat-pill', activeConversation.state]"><span />{{ activeConversationStateLabel }}</span>
+        <span class="task-id">{{ currentConversation.taskId }}</span>
+        <h1>{{ currentConversation.title }}</h1>
+        <span :class="['stat-pill', currentConversation.state]"><span />{{ activeConversationStateLabel }}</span>
         <div class="head-actions">
           <button class="icon-btn" type="button" aria-label="打开任务轨迹" title="打开任务轨迹">
             <ListChecks class="tiny-icon" />
@@ -883,29 +1026,19 @@ onMounted(async () => {
 
       <section class="thread" aria-label="任务线程">
         <div class="turn user-turn">
-          <div class="avatar">{{ activeConversation.user }}</div>
-          <div class="bubble" v-html="activeConversation.prompt" />
+          <div class="avatar">{{ currentConversation.user }}</div>
+          <div class="bubble" v-html="currentConversation.prompt" />
         </div>
 
         <div class="turn agent-turn">
-          <div class="summary-strip">
-            <div
-              v-for="metric in activeConversation.metrics"
-              :key="metric.label"
-              :class="['metric', metric.tone ?? '']"
-            >
-              <span>{{ metric.label }}</span><strong>{{ metric.value }}</strong>
-            </div>
-          </div>
-
           <section class="plan">
             <div class="panel-head">
               <span class="panel-kicker">执行计划</span>
               <span class="panel-title">当前状态：{{ activeConversationStateLabel }}</span>
-              <span class="panel-count">{{ activeConversation.plan.filter((step) => step.state === 'done').length }}/{{ activeConversation.plan.length }}</span>
+              <span class="panel-count">{{ currentConversation.plan.filter((step) => step.state === 'done').length }}/{{ currentConversation.plan.length }}</span>
             </div>
             <div
-              v-for="step in activeConversation.plan"
+              v-for="step in currentConversation.plan"
               :key="step.title"
               :class="['plan-step', step.state]"
             >
@@ -917,21 +1050,21 @@ onMounted(async () => {
             </div>
           </section>
 
-          <p class="agent-message" v-html="activeConversation.agentMessage" />
+          <p class="agent-message" v-html="currentConversation.agentMessage" />
 
           <section :class="['toolcall', toolOpen ? 'open' : '']">
             <button class="tc-head" type="button" @click="toolOpen = !toolOpen">
               <span class="tc-ico">
                 <ClipboardCheck class="tiny-icon" />
               </span>
-              <span class="tc-name">{{ activeConversation.toolName }}</span>
-              <span class="tc-arg">{{ activeConversation.toolArgs }}</span>
+              <span class="tc-name">{{ currentConversation.toolName }}</span>
+              <span class="tc-arg">{{ currentConversation.toolArgs }}</span>
               <ChevronRight class="tc-chev tiny-icon" />
             </button>
             <div v-show="toolOpen" class="tc-body">
               <div class="tc-label">问题清单预览</div>
               <div class="review-list">
-                <div v-for="row in activeConversation.reviewRows" :key="row.text" class="review-row">
+                <div v-for="row in currentConversation.reviewRows" :key="row.text" class="review-row">
                   <span :class="['badge', row.level]">{{ row.label }}</span>
                   <span>{{ row.text }}</span>
                   <span class="ref">{{ row.ref }}</span>
@@ -944,14 +1077,14 @@ onMounted(async () => {
             </div>
           </section>
 
-          <section v-if="activeConversation.approval" class="approval-card">
+          <section v-if="currentConversation.approval" class="approval-card">
             <div class="approval-title">
               <span class="approval-icon">
                 <AlertTriangle class="tiny-icon" />
               </span>
-              <strong>{{ activeConversation.approval.title }}</strong>
+              <strong>{{ currentConversation.approval.title }}</strong>
             </div>
-            <p v-html="activeConversation.approval.body" />
+            <p v-html="currentConversation.approval.body" />
             <div class="approval-actions">
               <button class="btn primary" type="button">确认生成</button>
               <button class="btn ghost" type="button">查看全部问题</button>
@@ -986,7 +1119,7 @@ onMounted(async () => {
               </DropdownMenuContent>
             </DropdownMenu>
             <div class="mode-space" />
-            <span v-for="chip in activeConversation.contextChips" :key="chip" class="ctx-chip">{{ chip }}</span>
+            <span v-for="chip in currentConversation.contextChips" :key="chip" class="ctx-chip">{{ chip }}</span>
           </div>
           <textarea
             ref="composerInput"
@@ -1128,19 +1261,28 @@ onMounted(async () => {
     </aside>
 
     <footer class="statusbar">
-      <span :class="['s-dot', activeConversation.state]" />
-      <span>{{ activeConversationStateLabel }}</span>
-      <span class="sep">|</span>
-      <span>{{ activeConversation.taskId }}</span>
-      <span class="sep">|</span>
+      <template v-if="activeConversation">
+        <span :class="['s-dot', activeConversation.state]" />
+        <span>{{ conversationStateLabel(activeConversation.state) }}</span>
+        <span class="sep">|</span>
+        <span>{{ activeConversation.taskId }}</span>
+        <span class="sep">|</span>
+      </template>
+      <template v-else>
+        <span class="s-dot idle" />
+        <span>新对话</span>
+        <span class="sep">|</span>
+        <span>未创建任务</span>
+        <span class="sep">|</span>
+      </template>
       <span>本地 FastAPI: {{ apiBaseUrl }}</span>
       <span class="sep">|</span>
       <div class="status-right">
-        <span>{{ activeConversation.contextChips.length }} 个上下文</span>
+        <span>{{ activeConversation?.contextChips.length ?? 0 }} 个上下文</span>
         <span class="sep">|</span>
-        <span>{{ activeConversation.reviewRows.length }} 条结果</span>
+        <span>{{ activeConversation?.reviewRows.length ?? 0 }} 条结果</span>
         <span class="sep">|</span>
-        <span>42k/200k token</span>
+        <span>{{ activeConversation ? "42k" : "0" }}/200k token</span>
       </div>
     </footer>
   </div>
@@ -1874,7 +2016,9 @@ textarea:focus-visible {
 
 .user-turn {
   display: flex;
+  flex-direction: row-reverse;
   gap: 12px;
+  justify-content: flex-start;
 }
 
 .avatar {
@@ -1893,8 +2037,7 @@ textarea:focus-visible {
 
 .bubble,
 .plan,
-.toolcall,
-.metric {
+.toolcall {
   border: 1px solid hsl(var(--border));
   border-radius: 8px;
   background: hsl(var(--card));
@@ -1902,9 +2045,15 @@ textarea:focus-visible {
 }
 
 .bubble {
+  max-width: min(720px, calc(100% - 42px));
   padding: 12px 16px;
   color: var(--fg-2);
   line-height: 1.7;
+}
+
+.user-turn .bubble {
+  background: hsl(var(--card));
+  text-align: left;
 }
 
 code {
@@ -1914,42 +2063,6 @@ code {
   padding: 1px 6px;
   font-family: var(--font-mono);
   font-size: 13px;
-}
-
-.summary-strip {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
-  margin-bottom: 16px;
-}
-
-.metric {
-  padding: 12px;
-}
-
-.metric span {
-  display: block;
-  margin-bottom: 4px;
-  color: var(--meta);
-  font-size: 11px;
-}
-
-.metric strong {
-  color: hsl(var(--foreground));
-  font-size: 18px;
-  font-weight: 900;
-}
-
-.metric.danger strong {
-  color: var(--danger);
-}
-
-.metric.warn strong {
-  color: var(--warn);
-}
-
-.metric.success strong {
-  color: var(--success);
 }
 
 .panel-head,

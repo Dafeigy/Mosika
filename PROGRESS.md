@@ -9,6 +9,49 @@
 - In release mode, `Mousika.exe` starts `mousika-server.exe` from the same folder.
 - The Vue client validates the local API through `GET http://127.0.0.1:8765/health`.
 
+## Development Conventions
+
+### Conversation Item Model
+
+- Use two top-level conversation item types as the primary storage and rendering boundary:
+  - `message`
+  - `tool_call`
+- `message` is for user, assistant, and system text/content blocks.
+- `tool_call` is for agent tool execution, approval gates, file parsing, OCR, export, review, and other structured operations.
+- Avoid adding top-level item types for every UI card, such as approval cards, issue lists, execution plans, or summary widgets.
+- Render specialized UI from structured content blocks or tool results instead:
+  - issue lists can come from `tool_call.result` with a render hint such as `issue_list`.
+  - approval UI can come from `tool_call.status = approval_required` or `tool_call.result.requiresApproval`.
+  - execution plans can live in a tool result or structured assistant message block.
+- The message stream should be the source of truth. Workbench panels, status chips, and inspector content should be derived views.
+- Keep the UI conversation flow close to Codex-style message and tool-call rhythm. Avoid dashboard-like top metric strips unless they are explicitly part of a tool result view.
+
+Suggested TypeScript shape:
+
+```ts
+type ConversationItem =
+  | {
+      type: "message";
+      id: string;
+      role: "user" | "assistant" | "system";
+      content: MessageContent[];
+      createdAt: string;
+      status?: "streaming" | "done" | "error";
+    }
+  | {
+      type: "tool_call";
+      id: string;
+      toolName: string;
+      title?: string;
+      status: "pending" | "running" | "approval_required" | "done" | "error";
+      args?: unknown;
+      result?: unknown;
+      renderHint?: string;
+      createdAt: string;
+      updatedAt: string;
+    };
+```
+
 ## Completed
 
 - Split FastAPI code into a small `api` and `core` structure.
@@ -37,6 +80,13 @@
 - Added runtime project rename support for the current mock project list.
 - Added a Tauri-backed project registry at `%APPDATA%/Mousika/projects.json`.
 - Project rename now persists to the local project registry and survives app reloads.
+- Project registry records no longer store UI activation state; app startup begins from the new-conversation home page.
+- Global new-task entry clears the selected conversation and project context, while project-scoped new conversation keeps only the selected workspace project.
+- Removed the dashboard-like top metric strip from the workbench conversation prototype.
+- Added local conversation storage under `%APPDATA%/Mousika/conversations/`.
+  - `index.json` stores conversation metadata for fast project/no-project association.
+  - `{conversationId}.jsonl` stores the conversation item stream using `message` and `tool_call` records.
+  - Existing mock conversations initialize the local store on first launch.
 
 ## Known Issues
 
@@ -46,11 +96,13 @@
 - The client has health-check retries, but it does not yet expose richer diagnostics if the server fails to start.
 - The portable folder is not signed, zipped, checksummed, or versioned yet.
 - No installer, updater, or migration strategy exists yet.
-- Conversation and task data are still frontend mock data.
+- Conversation data is initialized from frontend mock data, then loaded from the local JSON/JSONL store.
+- Conversation updates are not yet fully wired to runtime actions such as creating a new conversation, appending streamed messages, or updating tool-call status.
 - Project registry persistence currently uses `%APPDATA%/Mousika/projects.json`; it is not migrated, validated with a schema version, or backed by SQLite yet.
 - Project rename updates the app-data project registry, but it does not write `.mousika` metadata inside the project folder yet.
 - Project removal menu items are visual placeholders and do not remove project records yet.
 - New project-scoped conversation currently routes to the home composer with the project selected; it does not create a persisted empty conversation record yet.
+- New global conversations currently start as an unpersisted composer state until the first message/create action is wired.
 - Search and scheduled-work sidebar actions are visual placeholders.
 - The "open in explorer" action depends on mock folder paths in this development workspace.
 
@@ -103,7 +155,7 @@
 8. Persist project and conversation runtime data.
    - Add schema versioning and validation for the app-data project registry.
    - Persist remove and create-project operations.
-   - Persist conversation creation and recent-update timestamps.
+   - Persist conversation creation, message appends, tool-call updates, and recent-update timestamps.
    - Add migration handling before replacing mock data completely.
 
 9. Strengthen validation.

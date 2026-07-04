@@ -2,6 +2,7 @@
 
 use std::{
     fs,
+    io::{BufRead, BufReader, Write},
     path::PathBuf,
     process::{Child, Command, Stdio},
     sync::Mutex,
@@ -23,13 +24,41 @@ struct ProjectRecord {
     name: String,
     meta: String,
     folder_path: String,
-    active: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ProjectRegistry {
     projects: Vec<ProjectRecord>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ConversationRecord {
+    id: String,
+    project_id: Option<String>,
+    title: String,
+    updated_at: String,
+    task_id: String,
+    state: String,
+    status_label: String,
+    user: String,
+    prompt: String,
+    metrics: Option<serde_json::Value>,
+    plan: serde_json::Value,
+    agent_message: String,
+    tool_name: String,
+    tool_args: String,
+    review_rows: serde_json::Value,
+    approval: Option<serde_json::Value>,
+    context_chips: Vec<String>,
+    items: Vec<serde_json::Value>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ConversationIndex {
+    conversations: Vec<serde_json::Value>,
 }
 
 #[tauri::command]
@@ -53,6 +82,18 @@ fn mousika_app_data_dir() -> Result<PathBuf, String> {
 
 fn project_registry_path() -> Result<PathBuf, String> {
     Ok(mousika_app_data_dir()?.join("projects.json"))
+}
+
+fn conversations_dir() -> Result<PathBuf, String> {
+    Ok(mousika_app_data_dir()?.join("conversations"))
+}
+
+fn conversation_index_path() -> Result<PathBuf, String> {
+    Ok(conversations_dir()?.join("index.json"))
+}
+
+fn conversation_items_path(conversation_id: &str) -> Result<PathBuf, String> {
+    Ok(conversations_dir()?.join(format!("{conversation_id}.jsonl")))
 }
 
 fn write_project_registry(projects: &[ProjectRecord]) -> Result<(), String> {
@@ -81,12 +122,111 @@ fn load_project_registry(default_projects: Vec<ProjectRecord>) -> Result<Vec<Pro
 
     let json = fs::read_to_string(registry_path).map_err(|err| err.to_string())?;
     let registry: ProjectRegistry = serde_json::from_str(&json).map_err(|err| err.to_string())?;
+    write_project_registry(&registry.projects)?;
     Ok(registry.projects)
 }
 
 #[tauri::command]
 fn save_project_registry(projects: Vec<ProjectRecord>) -> Result<(), String> {
     write_project_registry(&projects)
+}
+
+fn conversation_index_entry(conversation: &ConversationRecord) -> Result<serde_json::Value, String> {
+    let mut value = serde_json::to_value(conversation).map_err(|err| err.to_string())?;
+    if let Some(object) = value.as_object_mut() {
+        object.remove("items");
+    }
+    Ok(value)
+}
+
+fn write_conversation_items(conversation: &ConversationRecord) -> Result<(), String> {
+    let items_path = conversation_items_path(&conversation.id)?;
+    let mut file = fs::File::create(items_path).map_err(|err| err.to_string())?;
+
+    for item in &conversation.items {
+        let line = serde_json::to_string(item).map_err(|err| err.to_string())?;
+        writeln!(file, "{line}").map_err(|err| err.to_string())?;
+    }
+
+    Ok(())
+}
+
+fn read_conversation_items(conversation_id: &str) -> Result<Vec<serde_json::Value>, String> {
+    let items_path = conversation_items_path(conversation_id)?;
+    if !items_path.exists() {
+        return Ok(Vec::new());
+    }
+
+    let file = fs::File::open(items_path).map_err(|err| err.to_string())?;
+    let reader = BufReader::new(file);
+    let mut items = Vec::new();
+
+    for line in reader.lines() {
+        let line = line.map_err(|err| err.to_string())?;
+        if line.trim().is_empty() {
+            continue;
+        }
+        let item = serde_json::from_str(&line).map_err(|err| err.to_string())?;
+        items.push(item);
+    }
+
+    Ok(items)
+}
+
+fn write_conversation_store(conversations: &[ConversationRecord]) -> Result<(), String> {
+    let dir = conversations_dir()?;
+    fs::create_dir_all(&dir).map_err(|err| err.to_string())?;
+
+    let mut index_entries = Vec::with_capacity(conversations.len());
+    for conversation in conversations {
+        write_conversation_items(conversation)?;
+        index_entries.push(conversation_index_entry(conversation)?);
+    }
+
+    let index = ConversationIndex {
+        conversations: index_entries,
+    };
+    let json = serde_json::to_string_pretty(&index).map_err(|err| err.to_string())?;
+    fs::write(conversation_index_path()?, json).map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+fn load_conversation_store(
+    default_conversations: Vec<ConversationRecord>,
+) -> Result<Vec<ConversationRecord>, String> {
+    let index_path = conversation_index_path()?;
+
+    if !index_path.exists() {
+        write_conversation_store(&default_conversations)?;
+        return Ok(default_conversations);
+    }
+
+    let json = fs::read_to_string(index_path).map_err(|err| err.to_string())?;
+    let index: ConversationIndex = serde_json::from_str(&json).map_err(|err| err.to_string())?;
+    let mut conversations = Vec::with_capacity(index.conversations.len());
+
+    for mut value in index.conversations {
+        let conversation_id = value
+            .get("id")
+            .and_then(|id| id.as_str())
+            .ok_or("conversation index entry missing id")?
+            .to_string();
+        let items = read_conversation_items(&conversation_id)?;
+
+        if let Some(object) = value.as_object_mut() {
+            object.insert("items".to_string(), serde_json::Value::Array(items));
+        }
+
+        let conversation = serde_json::from_value(value).map_err(|err| err.to_string())?;
+        conversations.push(conversation);
+    }
+
+    Ok(conversations)
+}
+
+#[tauri::command]
+fn save_conversation_store(conversations: Vec<ConversationRecord>) -> Result<(), String> {
+    write_conversation_store(&conversations)
 }
 
 #[tauri::command]
@@ -186,6 +326,8 @@ fn main() {
             get_server_url,
             load_project_registry,
             save_project_registry,
+            load_conversation_store,
+            save_conversation_store,
             open_path_in_explorer
         ])
         .run(tauri::generate_context!())
