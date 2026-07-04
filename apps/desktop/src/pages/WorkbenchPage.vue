@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, ref } from "vue";
+import { computed, nextTick, ref } from "vue";
 import {
   AlertTriangle,
   BookOpen,
@@ -22,7 +22,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import type { ComposerMode, ConversationMock } from "@/types/workbench";
 
-defineProps<{
+const props = defineProps<{
   conversation: ConversationMock;
   stateLabel: string;
   prompt: string;
@@ -35,9 +35,13 @@ const emit = defineEmits<{
   "update:prompt": [value: string];
   "update:toolOpen": [value: boolean];
   selectMode: [mode: ComposerMode];
+  submitTask: [];
+  cancelTask: [];
 }>();
 
 const composerInput = ref<HTMLTextAreaElement | null>(null);
+
+const doneStepCount = computed(() => props.conversation.plan.filter((step) => step.state === "done").length);
 
 async function growComposer() {
   await nextTick();
@@ -83,11 +87,11 @@ function updatePrompt(event: Event) {
           <div class="panel-head">
             <span class="panel-kicker">执行计划</span>
             <span class="panel-title">当前状态：{{ stateLabel }}</span>
-            <span class="panel-count">{{ conversation.plan.filter((step) => step.state === 'done').length }}/{{ conversation.plan.length }}</span>
+            <span class="panel-count">{{ doneStepCount }}/{{ conversation.plan.length }}</span>
           </div>
           <div
             v-for="step in conversation.plan"
-            :key="step.title"
+            :key="`${step.tag}-${step.title}`"
             :class="['plan-step', step.state]"
           >
             <span class="checkmark">
@@ -112,7 +116,7 @@ function updatePrompt(event: Event) {
           <div v-show="toolOpen" class="tc-body">
             <div class="tc-label">问题清单预览</div>
             <div class="review-list">
-              <div v-for="row in conversation.reviewRows" :key="row.text" class="review-row">
+              <div v-for="row in conversation.reviewRows" :key="`${row.ref}-${row.text}`" class="review-row">
                 <span :class="['badge', row.level]">{{ row.label }}</span>
                 <span>{{ row.text }}</span>
                 <span class="ref">{{ row.ref }}</span>
@@ -120,7 +124,7 @@ function updatePrompt(event: Event) {
             </div>
             <div class="tc-label boundary">执行边界</div>
             <p class="tc-note">
-              当前任务仅处理工作区副本，不写回原文件；涉及规范解释和覆盖原文件的动作需要人工确认。
+              当前 Phase 0 使用 Mock Runtime，只生成任务记录、工具调用记录、事件流和 artifact，不修改用户原始文件。
             </p>
           </div>
         </section>
@@ -136,7 +140,7 @@ function updatePrompt(event: Event) {
           <div class="approval-actions">
             <button class="btn primary" type="button">确认生成</button>
             <button class="btn ghost" type="button">查看全部问题</button>
-            <button class="btn danger" type="button">停止任务</button>
+            <button class="btn danger" type="button" @click="emit('cancelTask')">停止任务</button>
           </div>
         </section>
       </div>
@@ -173,7 +177,8 @@ function updatePrompt(event: Event) {
           ref="composerInput"
           :value="prompt"
           rows="1"
-          placeholder="描述目标，或追加指令。例如：把高风险项单独导出为审查意见回复表"
+          placeholder="描述目标，或追加指令。例如：检查当前工程资料并生成审查问题清单"
+          @keydown.ctrl.enter.prevent="emit('submitTask')"
           @input="updatePrompt"
         />
         <div class="composer-foot">
@@ -186,11 +191,11 @@ function updatePrompt(event: Event) {
           <button class="comp-tool" type="button" aria-label="任务设置" title="任务设置">
             <SlidersHorizontal class="tiny-icon" />
           </button>
-          <button class="comp-tool" type="button" aria-label="中断执行" title="中断执行">
+          <button class="comp-tool" type="button" aria-label="中断执行" title="中断执行" @click="emit('cancelTask')">
             <Pause class="tiny-icon" />
           </button>
           <span class="comp-hint">Ctrl Enter 发送 / Shift Enter 换行</span>
-          <button class="send-btn" type="button">
+          <button class="send-btn" type="button" :disabled="!prompt.trim() || conversation.state === 'running'" @click="emit('submitTask')">
             <Send class="tiny-icon" />
             发送
           </button>

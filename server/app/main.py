@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from server.app.api.health import router as health_router
+from server.app.api.tasks import router as tasks_router
 from server.app.core.config import settings
 
 
@@ -16,3 +17,4 @@ app.add_middleware(
 )
 
 app.include_router(health_router)
+app.include_router(tasks_router)

@@ -33,7 +33,8 @@ function updatePrompt(event: Event) {
         <textarea
           :value="prompt"
           rows="3"
-          placeholder="随便输入，例如：帮我校审一份可研报告，检查术语、参数表和规范引用"
+          placeholder="随便输入，例如：帮我审查一份可研报告，检查术语、参数表和规范引用"
+          @keydown.ctrl.enter.prevent="emit('openWorkbench')"
           @input="updatePrompt"
         />
         <div class="home-tools">
