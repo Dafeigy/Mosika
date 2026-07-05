@@ -8,7 +8,7 @@ export type PlanStepState = "done" | "current" | "pending";
 export type RiskLevel = "high" | "mid" | "low";
 
 export type MessageContent = {
-  type: "text" | "html";
+  type: "text" | "markdown";
   text: string;
 };
 

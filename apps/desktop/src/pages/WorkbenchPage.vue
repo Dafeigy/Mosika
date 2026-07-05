@@ -20,6 +20,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { renderMarkdown } from "@/lib/markdown";
 import type { ComposerMode, ConversationMock } from "@/types/workbench";
 
 const props = defineProps<{
@@ -42,6 +43,9 @@ const emit = defineEmits<{
 const composerInput = ref<HTMLTextAreaElement | null>(null);
 
 const doneStepCount = computed(() => props.conversation.plan.filter((step) => step.state === "done").length);
+const renderedPrompt = computed(() => renderMarkdown(props.conversation.prompt));
+const renderedAgentMessage = computed(() => renderMarkdown(props.conversation.agentMessage));
+const renderedApprovalBody = computed(() => (props.conversation.approval ? renderMarkdown(props.conversation.approval.body) : ""));
 
 async function growComposer() {
   await nextTick();
@@ -79,7 +83,7 @@ function updatePrompt(event: Event) {
     <section class="thread" aria-label="任务线程">
       <div class="turn user-turn">
         <div class="avatar">{{ conversation.user }}</div>
-        <div class="bubble" v-html="conversation.prompt" />
+        <div class="bubble markdown-body" v-html="renderedPrompt" />
       </div>
 
       <div class="turn agent-turn">
@@ -102,7 +106,7 @@ function updatePrompt(event: Event) {
           </div>
         </section>
 
-        <p class="agent-message" v-html="conversation.agentMessage" />
+        <div class="agent-message markdown-body" v-html="renderedAgentMessage" />
 
         <section :class="['toolcall', toolOpen ? 'open' : '']">
           <button class="tc-head" type="button" @click="emit('update:toolOpen', !toolOpen)">
@@ -136,7 +140,7 @@ function updatePrompt(event: Event) {
             </span>
             <strong>{{ conversation.approval.title }}</strong>
           </div>
-          <p v-html="conversation.approval.body" />
+          <div class="approval-body markdown-body" v-html="renderedApprovalBody" />
           <div class="approval-actions">
             <button class="btn primary" type="button">确认生成</button>
             <button class="btn ghost" type="button">查看全部问题</button>

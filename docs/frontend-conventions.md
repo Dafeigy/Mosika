@@ -13,6 +13,7 @@ apps/desktop/src
 |   |-- layout/           App shell pieces: titlebar, sidebar, statusbar
 |   |-- ui/               Generated shadcn-vue primitives
 |   `-- workbench/        Reusable workbench-specific panels/widgets
+|-- composables/           Vue Composition API state and workflow logic
 |-- data/                 Temporary mock/demo data
 |-- lib/                  Shared utilities
 |-- pages/                Top-level route/view components
@@ -34,6 +35,8 @@ apps/desktop/src
 
 - Use Vue 3 Composition API with `<script setup lang="ts">`.
 - Prefer a single owner for mutable state. Parent components pass state down through props and receive changes via emits or `v-model:*`.
+- Put reusable stateful workflows in `composables/`, named as `useXxx.ts`.
+- Keep `App.vue` as a composition layer. It may wire composables together, but should not own long workflow implementations such as task event streams or persistence serialization.
 - Component-local DOM details, such as textarea autoresize, should stay inside the component that owns the DOM node.
 - Keep temporary demo data in `data/`. Move API-shaped data types to `types/` before wiring real backend endpoints.
 - Do not make project menu selections navigate unless a feature explicitly requires navigation.

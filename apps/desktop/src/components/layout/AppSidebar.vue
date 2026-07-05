@@ -26,6 +26,8 @@ const emit = defineEmits<{
   openRenameProjectDialog: [projectId: string];
   startProjectConversation: [projectId: string];
   openConversation: [conversationId: string];
+  openRenameConversationDialog: [conversationId: string];
+  deleteConversation: [conversationId: string];
   selectSettings: [];
 }>();
 </script>
@@ -112,17 +114,37 @@ const emit = defineEmits<{
         </div>
 
         <div v-if="expandedProjectIds.includes(project.id)" class="tree-children">
-          <button
-            v-for="conversation in projectConversations[project.id]"
-            :key="conversation.title"
-            :class="['tree-chat', activeConversationId === conversation.id ? 'active' : '']"
-            type="button"
-            @click="emit('openConversation', conversation.id)"
-          >
-            <span :class="['chat-dot', conversation.state]" />
-            <span>{{ conversation.title }}</span>
-            <span class="tree-chat-time">{{ conversation.updatedAt }}</span>
-          </button>
+          <div v-for="conversation in projectConversations[project.id]" :key="conversation.id" class="conversation-node">
+            <button
+              :class="['tree-chat', activeConversationId === conversation.id ? 'active' : '']"
+              type="button"
+              @click="emit('openConversation', conversation.id)"
+            >
+              <span :class="['chat-dot', conversation.state]" />
+              <span>{{ conversation.title }}</span>
+              <span class="tree-chat-time">{{ conversation.updatedAt }}</span>
+            </button>
+
+            <div class="project-actions conversation-actions">
+              <DropdownMenu>
+                <DropdownMenuTrigger as-child>
+                  <button class="project-action-btn" type="button" aria-label="更多对话操作" title="更多" @click.stop>
+                    <MoreHorizontal class="tiny-icon" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent class="project-action-menu" align="start" :side-offset="6">
+                  <DropdownMenuItem class="project-action-item" @select="emit('openRenameConversationDialog', conversation.id)">
+                    <Pencil class="project-action-icon" />
+                    重命名对话
+                  </DropdownMenuItem>
+                  <DropdownMenuItem class="project-action-item danger" @select="emit('deleteConversation', conversation.id)">
+                    <Trash2 class="project-action-icon" />
+                    删除对话
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          </div>
           <span v-if="!projectConversations[project.id]?.length" class="empty-tree">暂无对话</span>
         </div>
       </div>
@@ -130,16 +152,36 @@ const emit = defineEmits<{
 
     <div class="direct-chat-list">
       <div class="sess-group">对话</div>
-      <button
-        v-for="chat in directConversations"
-        :key="chat.id"
-        class="sess-item compact-chat"
-        type="button"
-        @click="emit('openConversation', chat.id)"
-      >
-        <span class="s-title">{{ chat.title }}</span>
-        <span class="s-time">{{ chat.updatedAt }}</span>
-      </button>
+      <div v-for="chat in directConversations" :key="chat.id" class="conversation-node">
+        <button
+          :class="['sess-item', 'compact-chat', activeConversationId === chat.id ? 'active' : '']"
+          type="button"
+          @click="emit('openConversation', chat.id)"
+        >
+          <span class="s-title">{{ chat.title }}</span>
+          <span class="s-time">{{ chat.updatedAt }}</span>
+        </button>
+
+        <div class="project-actions conversation-actions">
+          <DropdownMenu>
+            <DropdownMenuTrigger as-child>
+              <button class="project-action-btn" type="button" aria-label="更多对话操作" title="更多" @click.stop>
+                <MoreHorizontal class="tiny-icon" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent class="project-action-menu" align="start" :side-offset="6">
+              <DropdownMenuItem class="project-action-item" @select="emit('openRenameConversationDialog', chat.id)">
+                <Pencil class="project-action-icon" />
+                重命名对话
+              </DropdownMenuItem>
+              <DropdownMenuItem class="project-action-item danger" @select="emit('deleteConversation', chat.id)">
+                <Trash2 class="project-action-icon" />
+                删除对话
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </div>
     </div>
 
     <div class="side-foot">

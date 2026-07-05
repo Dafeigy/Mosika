@@ -384,6 +384,11 @@ textarea:focus-visible {
   min-width: 0;
 }
 
+.conversation-node {
+  position: relative;
+  min-width: 0;
+}
+
 .project-row {
   min-height: 30px;
   padding: 0 64px 0 8px;
@@ -404,8 +409,10 @@ textarea:focus-visible {
   transition: opacity 120ms ease;
 }
 
-.project-node:hover .project-actions,
-.project-node:focus-within .project-actions {
+.project-node:hover > .project-actions,
+.project-node:focus-within > .project-actions,
+.conversation-node:hover .conversation-actions,
+.conversation-node:focus-within .conversation-actions {
   opacity: 1;
   pointer-events: auto;
 }
@@ -525,12 +532,13 @@ textarea:focus-visible {
 .tree-chat {
   display: grid;
   grid-template-columns: 12px minmax(0, 1fr) auto;
+  width: 100%;
   min-height: 28px;
   align-items: center;
   gap: 7px;
   border-radius: 6px;
   color: var(--fg-2);
-  padding: 0 8px;
+  padding: 0 36px 0 8px;
   text-align: left;
   font-size: 13px;
 }
@@ -642,12 +650,17 @@ textarea:focus-visible {
   column-gap: 10px;
   border: 1px solid transparent;
   border-radius: 6px;
-  padding: 7px 10px;
+  padding: 7px 38px 7px 10px;
   text-align: left;
 }
 
-.sess-item:hover {
+.sess-item:hover,
+.sess-item.active {
   background: var(--surface-soft);
+}
+
+.sess-item.active .s-title {
+  color: var(--accent);
 }
 
 .s-title {
@@ -878,6 +891,57 @@ textarea:focus-visible {
   line-height: 1.7;
 }
 
+.markdown-body > :first-child {
+  margin-top: 0;
+}
+
+.markdown-body > :last-child {
+  margin-bottom: 0;
+}
+
+.markdown-body p,
+.markdown-body ul,
+.markdown-body ol,
+.markdown-body pre,
+.markdown-body blockquote {
+  margin: 0 0 8px;
+}
+
+.markdown-body ul,
+.markdown-body ol {
+  padding-left: 20px;
+}
+
+.markdown-body strong {
+  color: hsl(var(--foreground));
+  font-weight: 800;
+}
+
+.markdown-body a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.markdown-body pre {
+  overflow-x: auto;
+  border-radius: 6px;
+  background: #102033;
+  color: #f8fafc;
+  padding: 10px 12px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.markdown-body pre code {
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  padding: 0;
+  font-size: inherit;
+}
+
 .user-turn .bubble {
   background: hsl(var(--card));
   text-align: left;
@@ -1102,7 +1166,7 @@ code {
   color: var(--warn);
 }
 
-.approval-card p {
+.approval-body {
   color: var(--fg-2);
   font-size: 13px;
   line-height: 1.7;
