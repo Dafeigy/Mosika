@@ -11,6 +11,7 @@ class Settings(BaseModel):
         "https://tauri.localhost",
         "tauri://localhost",
     ]
+    allowed_origin_regex: str = r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$"
 
 
 settings = Settings()

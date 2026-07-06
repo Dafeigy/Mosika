@@ -1,21 +1,32 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+use serde::{Deserialize, Serialize};
 use std::{
     fs,
-    io::{BufRead, BufReader, Write},
+    io::{BufRead, BufReader, Read, Write},
+    net::{TcpListener, TcpStream},
     path::PathBuf,
-    process::{Child, Command, Stdio},
+    process::{self, Child, Command, Stdio},
     sync::Mutex,
+    thread,
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 use tauri::Manager;
-use serde::{Deserialize, Serialize};
 
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
 
-const SERVER_URL: &str = "http://127.0.0.1:8765";
+const DEFAULT_SERVER_URL: &str = "http://127.0.0.1:8765";
 
-struct ServerProcess(Mutex<Option<Child>>);
+struct ServerState(Mutex<ServerRuntime>);
+
+#[derive(Debug)]
+struct ServerRuntime {
+    child: Option<Child>,
+    url: String,
+    port: Option<u16>,
+    shutdown_token: Option<String>,
+}
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -62,8 +73,13 @@ struct ConversationIndex {
 }
 
 #[tauri::command]
-fn get_server_url() -> &'static str {
-    SERVER_URL
+fn get_server_url(state: tauri::State<ServerState>) -> String {
+    state
+        .0
+        .lock()
+        .expect("server state lock poisoned")
+        .url
+        .clone()
 }
 
 fn mousika_app_data_dir() -> Result<PathBuf, String> {
@@ -112,7 +128,9 @@ fn write_project_registry(projects: &[ProjectRecord]) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn load_project_registry(default_projects: Vec<ProjectRecord>) -> Result<Vec<ProjectRecord>, String> {
+fn load_project_registry(
+    default_projects: Vec<ProjectRecord>,
+) -> Result<Vec<ProjectRecord>, String> {
     let registry_path = project_registry_path()?;
 
     if !registry_path.exists() {
@@ -131,7 +149,9 @@ fn save_project_registry(projects: Vec<ProjectRecord>) -> Result<(), String> {
     write_project_registry(&projects)
 }
 
-fn conversation_index_entry(conversation: &ConversationRecord) -> Result<serde_json::Value, String> {
+fn conversation_index_entry(
+    conversation: &ConversationRecord,
+) -> Result<serde_json::Value, String> {
     let mut value = serde_json::to_value(conversation).map_err(|err| err.to_string())?;
     if let Some(object) = value.as_object_mut() {
         object.remove("items");
@@ -276,7 +296,100 @@ fn packaged_server_path() -> Option<PathBuf> {
     Some(exe_dir.join("mousika-server.exe"))
 }
 
-fn spawn_packaged_server() -> std::io::Result<Option<Child>> {
+fn reserve_local_port() -> std::io::Result<u16> {
+    let listener = TcpListener::bind(("127.0.0.1", 0))?;
+    let port = listener.local_addr()?.port();
+    drop(listener);
+    Ok(port)
+}
+
+fn server_health_ok(port: u16) -> bool {
+    let Ok(mut stream) = TcpStream::connect(("127.0.0.1", port)) else {
+        return false;
+    };
+
+    let _ = stream.set_read_timeout(Some(Duration::from_millis(300)));
+    let _ = stream.set_write_timeout(Some(Duration::from_millis(300)));
+
+    let request = b"GET /health HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n";
+    if stream.write_all(request).is_err() {
+        return false;
+    }
+
+    let mut response = String::new();
+    stream.read_to_string(&mut response).is_ok() && response.starts_with("HTTP/1.1 200")
+}
+
+fn wait_for_server_ready(port: u16, timeout: Duration) -> bool {
+    let deadline = Instant::now() + timeout;
+    while Instant::now() < deadline {
+        if server_health_ok(port) {
+            return true;
+        }
+        thread::sleep(Duration::from_millis(150));
+    }
+    false
+}
+
+fn make_shutdown_token(port: u16) -> String {
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .unwrap_or_default();
+    format!("{nanos:x}-{:x}-{port:x}", process::id())
+}
+
+fn request_server_shutdown(port: u16, shutdown_token: &str) -> bool {
+    let Ok(mut stream) = TcpStream::connect(("127.0.0.1", port)) else {
+        return false;
+    };
+
+    let _ = stream.set_read_timeout(Some(Duration::from_millis(500)));
+    let _ = stream.set_write_timeout(Some(Duration::from_millis(500)));
+
+    let request = format!(
+        "POST /internal/shutdown HTTP/1.1\r\n\
+         Host: 127.0.0.1\r\n\
+         Connection: close\r\n\
+         Content-Length: 0\r\n\
+         X-Mousika-Shutdown-Token: {shutdown_token}\r\n\
+         \r\n"
+    );
+    if stream.write_all(request.as_bytes()).is_err() {
+        return false;
+    }
+
+    let mut response = String::new();
+    stream.read_to_string(&mut response).is_ok() && response.starts_with("HTTP/1.1 200")
+}
+
+fn wait_for_child_exit(child: &mut Child, timeout: Duration) -> bool {
+    let deadline = Instant::now() + timeout;
+    while Instant::now() < deadline {
+        if matches!(child.try_wait(), Ok(Some(_))) {
+            return true;
+        }
+        thread::sleep(Duration::from_millis(100));
+    }
+
+    matches!(child.try_wait(), Ok(Some(_)))
+}
+
+fn stop_packaged_server(mut child: Child, port: Option<u16>, shutdown_token: Option<String>) {
+    let graceful_requested = match (port, shutdown_token.as_deref()) {
+        (Some(port), Some(token)) => request_server_shutdown(port, token),
+        _ => false,
+    };
+
+    if graceful_requested && wait_for_child_exit(&mut child, Duration::from_secs(5)) {
+        return;
+    }
+
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+fn spawn_packaged_server() -> std::io::Result<Option<(Child, String, u16, String)>> {
     let Some(server_path) = packaged_server_path() else {
         return Ok(None);
     };
@@ -286,39 +399,70 @@ fn spawn_packaged_server() -> std::io::Result<Option<Child>> {
         return Ok(None);
     }
 
+    let port = reserve_local_port()?;
+    let server_url = format!("http://127.0.0.1:{port}");
+    let shutdown_token = make_shutdown_token(port);
     let mut command = Command::new(server_path);
+    command
+        .arg("--host")
+        .arg("127.0.0.1")
+        .arg("--port")
+        .arg(port.to_string());
+    command.env("MOUSIKA_SHUTDOWN_TOKEN", &shutdown_token);
     command.stdout(Stdio::null()).stderr(Stdio::null());
 
     #[cfg(windows)]
     command.creation_flags(0x08000000);
 
-    command.spawn().map(Some)
+    let mut child = command.spawn()?;
+    if wait_for_server_ready(port, Duration::from_secs(10)) {
+        Ok(Some((child, server_url, port, shutdown_token)))
+    } else {
+        let _ = child.kill();
+        let _ = child.wait();
+        Err(std::io::Error::new(
+            std::io::ErrorKind::TimedOut,
+            format!("server did not become ready at {server_url}"),
+        ))
+    }
 }
 
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .manage(ServerProcess(Mutex::new(None)))
+        .manage(ServerState(Mutex::new(ServerRuntime {
+            child: None,
+            url: std::env::var("MOUSIKA_SERVER_URL")
+                .unwrap_or_else(|_| DEFAULT_SERVER_URL.to_string()),
+            port: None,
+            shutdown_token: None,
+        })))
         .setup(|app| {
-            if let Some(child) = spawn_packaged_server()? {
-                let state = app.state::<ServerProcess>();
-                *state.0.lock().expect("server process lock poisoned") = Some(child);
+            if let Some((child, server_url, port, shutdown_token)) = spawn_packaged_server()? {
+                let state = app.state::<ServerState>();
+                let mut runtime = state.0.lock().expect("server state lock poisoned");
+                runtime.child = Some(child);
+                runtime.url = server_url;
+                runtime.port = Some(port);
+                runtime.shutdown_token = Some(shutdown_token);
             }
 
             Ok(())
         })
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::Destroyed = event {
-                let state = window.state::<ServerProcess>();
-                let child = state
-                    .0
-                    .lock()
-                    .expect("server process lock poisoned")
-                    .take();
+                let state = window.state::<ServerState>();
+                let (child, port, shutdown_token) = {
+                    let mut runtime = state.0.lock().expect("server state lock poisoned");
+                    (
+                        runtime.child.take(),
+                        runtime.port.take(),
+                        runtime.shutdown_token.take(),
+                    )
+                };
 
-                if let Some(mut child) = child {
-                    let _ = child.kill();
-                    let _ = child.wait();
+                if let Some(child) = child {
+                    stop_packaged_server(child, port, shutdown_token);
                 }
             }
         })

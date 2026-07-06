@@ -4,34 +4,12 @@ import net from "node:net";
 const isWindows = process.platform === "win32";
 const npmCommand = isWindows ? "npm.cmd" : "npm";
 const pythonCommand = isWindows ? "python" : "python3";
-
-const processes = [
-  {
-    name: "server",
-    command: pythonCommand,
-    args: [
-      "-m",
-      "uvicorn",
-      "server.app.main:app",
-      "--host",
-      "127.0.0.1",
-      "--port",
-      "8765",
-      "--reload",
-    ],
-  },
-  {
-    name: "desktop",
-    command: npmCommand,
-    args: ["run", "tauri:dev", "--workspace", "apps/desktop"],
-    shell: isWindows,
-  },
-];
+const serverHost = "127.0.0.1";
 
 let shuttingDown = false;
 const children = [];
 
-function isPortAvailable(port) {
+function isPortAvailable(port, host = serverHost) {
   return new Promise((resolve) => {
     const server = net.createServer();
 
@@ -39,7 +17,26 @@ function isPortAvailable(port) {
     server.once("listening", () => {
       server.close(() => resolve(true));
     });
-    server.listen(port, "127.0.0.1");
+    server.listen(port, host);
+  });
+}
+
+function reserveLocalPort() {
+  return new Promise((resolve, reject) => {
+    const server = net.createServer();
+
+    server.once("error", reject);
+    server.listen(0, serverHost, () => {
+      const address = server.address();
+      const port = typeof address === "object" && address ? address.port : null;
+      server.close(() => {
+        if (port) {
+          resolve(port);
+        } else {
+          reject(new Error("Unable to reserve a local port"));
+        }
+      });
+    });
   });
 }
 
@@ -72,7 +69,6 @@ function stopAll(exitCode = 0) {
 
 async function preflight() {
   const checks = [
-    { port: 8765, label: "FastAPI server" },
     { port: 1420, label: "Vite dev server" },
   ];
 
@@ -80,7 +76,7 @@ async function preflight() {
     const available = await isPortAvailable(check.port);
     if (!available) {
       console.error(
-        `[dev] 127.0.0.1:${check.port} is already in use (${check.label}). ` +
+        `[dev] ${serverHost}:${check.port} is already in use (${check.label}). ` +
           "Stop the existing process, then run npm run dev again.",
       );
       process.exit(1);
@@ -88,13 +84,13 @@ async function preflight() {
   }
 }
 
-function startProcess(processConfig) {
+function startProcess(processConfig, extraEnv = {}) {
   let child;
 
   try {
     child = spawn(processConfig.command, processConfig.args, {
       cwd: process.cwd(),
-      env: process.env,
+      env: { ...process.env, ...extraEnv },
       shell: processConfig.shell ?? false,
       stdio: "inherit",
       windowsHide: true,
@@ -126,6 +122,38 @@ process.on("SIGTERM", () => stopAll(0));
 process.on("SIGHUP", () => stopAll(0));
 
 await preflight();
+const serverPort = await reserveLocalPort();
+const serverUrl = `http://${serverHost}:${serverPort}`;
+console.log(`[dev] FastAPI server URL: ${serverUrl}`);
+
+const processes = [
+  {
+    name: "server",
+    command: pythonCommand,
+    args: [
+      "-m",
+      "uvicorn",
+      "server.app.main:app",
+      "--host",
+      serverHost,
+      "--port",
+      String(serverPort),
+      "--reload",
+    ],
+  },
+  {
+    name: "desktop",
+    command: npmCommand,
+    args: ["run", "tauri:dev", "--workspace", "apps/desktop"],
+    shell: isWindows,
+  },
+];
+
+const devEnv = {
+  MOUSIKA_SERVER_URL: serverUrl,
+  VITE_API_BASE_URL: serverUrl,
+};
+
 for (const processConfig of processes) {
-  startProcess(processConfig);
+  startProcess(processConfig, devEnv);
 }
